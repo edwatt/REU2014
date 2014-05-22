@@ -25,6 +25,7 @@ class build_block(gr.top_block):
 			print "\nFound '%s'" % uhd_type
 		else:
 			print "\nNo device found"
+			self.u_tx = None
 			return
 
 		#check version of USRP and set num_channels
@@ -84,28 +85,31 @@ def main():
 	try:
 		tb = build_block()
 		tb.start()
-		print "Transmission test will cycle once through the operating frequencies hopping 10 MHz at a time"
-		raw_input("Press Enter to begin transmission test & Ctrl-C to exit\n")
 
-		start = tb.u_tx.get_freq_range().start()
-		stop = tb.u_tx.get_freq_range().stop()
+		if tb.u_tx is not None:
 
-		freq_hops = int((stop - start) / 10e6) + 1	
+			print "Transmission test will cycle once through the operating frequencies hopping 10 MHz at a time"
+			raw_input("Press Enter to begin transmission test & Ctrl-C to exit\n")
+
+			start = tb.u_tx.get_freq_range().start()
+			stop = tb.u_tx.get_freq_range().stop()
+
+			freq_hops = int((stop - start) / 10e6) + 1	
 		
-		print "\nTransmit Frequencies:"
+			print "\nTransmit Frequencies:"
 
-		channel = 0 #default to first channel
+			channel = 0 #default to first channel
 
-		for i in xrange(freq_hops):
-			trans_freq = start + i * 10e6
-			tb.u_tx.set_center_freq(trans_freq,channel)
-			print "\n%d MHz" % (trans_freq/1e6)
-			sleep(.3)
+			for i in xrange(freq_hops):
+				trans_freq = start + i * 10e6
+				tb.u_tx.set_center_freq(trans_freq,channel)
+				print "\n%d MHz" % (trans_freq/1e6)
+				sleep(.3)
 		
 		print "\nTest Over"
 
 		tb.stop()
-	except [[KeyboardInterrupt]]:
+	except KeyboardInterrupt:
 		pass
 
 
