@@ -82,6 +82,7 @@ class build_block(gr.top_block):
 		self.connect(self.tx_src0, self.u_tx)
 
 def main():
+
 	try:
 		tb = build_block()
 		tb.start()

@@ -1,12 +1,16 @@
 #!/usr/bin/env python
 
 """
-Retrieve operating parameters of connected USRP and loop through the operating spectrum trasmitting a constant wave signal
+Custom freq hopping example - Hops 10 MHz at a time in a custom pattern back and forth increasing the signal amplitude on each loop
 """
 from gnuradio import gr
 from gnuradio import analog
 from gnuradio import uhd
 from time import sleep
+from optparse import OptionParser
+import sys
+from gnuradio.eng_option import eng_option
+
 
 MAX_RATE = 1000e6
 
@@ -82,15 +86,31 @@ class build_block(gr.top_block):
 		self.connect(self.tx_src0, self.u_tx)
 
 def main():
+
+	parser = OptionParser (option_class=eng_option)
+	parser.add_option ("-o", "--offset", type="eng_float", default=0,
+					   help="set offset from center frequency", metavar="OFFSET")
+
+	(options, args) = parser.parse_args()
+
+	if len(args) != 0:
+		parser.print_help()
+		sys.exit(1)
+
+	if options.offset < 1e6:
+		options.offset *= 1e6
+
+
+
 	try:
 		tb = build_block()
 		tb.start()
 
-		if tb.u_tx is None:
+		if tb.u_tx is not None:
 
 			print "Application will hop through a 50 MHz band in the center of the operating frequency 5 times increasing the signal amplitude each time"
 			raw_input("Press Enter to begin transmission & Ctrl-C to exit\n")
-
+			
 			start = tb.u_tx.get_freq_range().start()
 			stop = tb.u_tx.get_freq_range().stop()
 
@@ -106,10 +126,10 @@ def main():
 				tb.u_tx.set_gain(trans_amp, channel)
 
 				for i in xrange(freq_hops):
-					trans_freq = ( start + stop ) / 2 - freq_hops / 2.0 + i * 10e6
+					trans_freq = ( start + stop ) / 2 + options.offset - freq_hops / 2.0 + i * 10e6
 					tb.u_tx.set_center_freq(trans_freq,channel)
 					print "%d MHz @ %f" % ((trans_freq/1e6), trans_amp)
-					sleep(.3)
+					sleep(.5)
 
 				trans_amp += 0.2
 				if trans_amp > 1.0: break
@@ -117,10 +137,10 @@ def main():
 				tb.u_tx.set_gain(trans_amp, channel)
 
 				for i in xrange(freq_hops - 1, -1, -1):
-					trans_freq = ( start + stop ) / 2 - freq_hops / 2.0 + i * 10e6
+					trans_freq = ( start + stop ) / 2 + options.offset - freq_hops / 2.0 + i * 10e6
 					tb.u_tx.set_center_freq(trans_freq,channel)
 					print "%d MHz @ %f" % ((trans_freq/1e6), trans_amp)
-					sleep(.3)
+					sleep(.5)
 
 				trans_amp += 0.2
 
