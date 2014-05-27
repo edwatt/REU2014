@@ -128,7 +128,7 @@ def main():
 				for i in xrange(freq_hops):
 					trans_freq = ( start + stop ) / 2 + options.offset - freq_hops / 2.0 + i * 10e6
 					tb.u_tx.set_center_freq(trans_freq,channel)
-					print "%d MHz @ %f" % ((trans_freq/1e6), trans_amp)
+					print "\t%d MHz @ %f" % ((trans_freq/1e6), trans_amp)
 					sleep(.5)
 
 				trans_amp += 0.2
@@ -139,7 +139,7 @@ def main():
 				for i in xrange(freq_hops - 1, -1, -1):
 					trans_freq = ( start + stop ) / 2 + options.offset - freq_hops / 2.0 + i * 10e6
 					tb.u_tx.set_center_freq(trans_freq,channel)
-					print "%d MHz @ %f" % ((trans_freq/1e6), trans_amp)
+					print "\t%d MHz @ %f" % ((trans_freq/1e6), trans_amp)
 					sleep(.5)
 
 				trans_amp += 0.2
