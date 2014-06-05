@@ -3,9 +3,11 @@
 """
 Retrieve operating parameters of connected USRP and loop through the operating spectrum trasmitting a constant wave signal
 """
-from gnuradio import gr
+from gnuradio import gr, eng_notation
 from gnuradio import analog
 from gnuradio import uhd
+from gnuradio.eng_option import eng_option
+from optparse import OptionParser
 from time import sleep
 
 MAX_RATE = 1000e6
@@ -13,6 +15,13 @@ MAX_RATE = 1000e6
 class build_block(gr.top_block):
 	def __init__(self):
 		gr.top_block.__init__(self)
+		
+		usage = "usage: %prog [options]"
+		parser = OptionParser(option_class=eng_option, usage=usage)
+		parser.add_option("-f", "--tx-freq", type="eng_float", default=None,
+						  metavar="Hz", help="Transmit frequency [default=center_frequency]")
+
+		(options, args) = parser.parse_args()
 
 		args = "" #only supporting USB USRPs for now
 
@@ -60,22 +69,19 @@ class build_block(gr.top_block):
 		tx_freq_high = tx_freq_range.stop()
 		tx_freq_mid = (tx_freq_low + tx_freq_high) / 2.0
 
+		if options.tx_freq is None:
+			self.tx_freq = tx_freq_mid
+		else:
+			if options.tx_freq < 1e6:
+				options.tx_freq *= 1e6
+			self.tx_freq = options.tx_freq
+
 		#output info
-		print "\nDevice Info"
-		print "\n\tType: %s" % uhd_type
-
-		print "\n\tMin Freq: %d MHz" % (tx_freq_low/1e6)
-		print "\tMax Freq: %d MHz" % (tx_freq_high/1e6)
-		print "\tMid Freq: %d MHz" % (tx_freq_mid/1e6)
-
-		print "\n\tMin Gain: %d dB" % tx_gain_min
-		print "\tMax Gain: %d dB" % tx_gain_max
+		print "\nDevice Info -\tType: %s\tFreq(MHz): (%d,%d,%d)\tGain(dB): (%f,%f)\n" % (uhd_type, (tx_freq_low/1e6), (tx_freq_mid/1e6), (tx_freq_high/1e6), tx_gain_min, tx_gain_max)		
 
 		#set initial parameters 
-
-		for i in xrange(tx_nchan):
-			self.u_tx.set_center_freq(tx_freq_mid + i*1e6, i)
-			self.u_tx.set_gain(tx_gain_max, i)
+		self.u_tx.set_center_freq(self.tx_freq)
+		self.u_tx.set_gain(tx_gain_max)
 
 		#connect blocks
 
@@ -89,29 +95,23 @@ def main():
 
 		if tb.u_tx is not None:
 
-			print "Transmission test will cycle once through the operating frequencies hopping 10 MHz at a time"
-			raw_input("Press Enter to begin transmission test & Ctrl-C to exit\n")
-
-			start = tb.u_tx.get_freq_range().start()
-			stop = tb.u_tx.get_freq_range().stop()
-
-			freq_hops = int((stop - start) / 10e6) + 1	
-		
-			print "\nTransmit Frequencies:"
-
-			channel = 0 #default to first channel
-
-			for i in xrange(freq_hops):
-				trans_freq = start + i * 10e6
-				tb.u_tx.set_center_freq(trans_freq,channel)
-				print "\n%d MHz" % (trans_freq/1e6)
-				sleep(.3)
+			print "Transmission will trasmit at a single frequency"
+			print "Frequency: %d" % tb.tx_freq
+ 
+			while(1):
+				raw_input("Press Enter to toggle transmission & Ctrl-C to exit\n")
+				if tb.tx_src0.amplitude() == 1.0:
+					tb.tx_src0.set_amplitude(0.0)
+					print "Transmission OFF"
+				else:
+					tb.tx_src0.set_amplitude(1.0)
+					print "Transmission ON"
 		
 		print "\nTest Over"
 
 		tb.stop()
 	except KeyboardInterrupt:
-		pass
+		print "\nTest Over"
 
 
 if __name__ == '__main__':

@@ -181,10 +181,6 @@ class build_block(gr.top_block):
 
 		mywindow=filter.window.blackmanharris(self.fft_size)
 		ffter = fft.fft_vcc(self.fft_size, True, mywindow, True)
-		power = 0
-
-		for tap in mywindow:
-			power += tap*tap
 
 		c2mag = blocks.complex_to_mag_squared(self.fft_size)
 
@@ -288,7 +284,7 @@ class build_block(gr.top_block):
 	def set_tx_channel(self, channel):
 		self.curr_channel = channel
 		target_freq = self.spec_min_freq + (self.curr_channel + 0.5) * self.tx_channel_bw
-		self.u_tx.set_center_freq(target_freq)	
+		# self.u_tx.set_center_freq(target_freq)	
 		self.tx_freq_min = target_freq - self.tx_guard_band
 		self.tx_freq_max = target_freq + self.tx_guard_band
 		print "\n TX Freq: %f" % target_freq
@@ -348,8 +344,8 @@ def main_loop(tb):
 			tb.step_count += 1
 			# print datetime.now(), "center_freq", center_freq, "freq", freq, "power_db", power_db, "noise_floor_db", noise_floor_db
 
-			if (power_db > tb.squelch_threshold) and (freq >= tb.min_freq) and (freq <= tb.max_freq) and ((freq < tb.tx_freq_min) or (freq > tb.tx_freq_max)):
-				print datetime.now(), "center_freq", center_freq, "freq", freq, "power_db", power_db, "noise_floor_db", noise_floor_db
+			if (power_db > tb.squelch_threshold) and (freq >= tb.spec_min_freq) and (freq <= tb.spec_max_freq):     # and ((freq < tb.tx_freq_min) or (freq > tb.tx_freq_max)):
+				print "DETECTION: ", datetime.now(), "center_freq", center_freq, "freq", freq, "power_db", power_db, "noise_floor_db", noise_floor_db
 				# stop transmission hopping
 				channel_grp_sel = range(tb.n_channel_grps)
 				channel_grp_sel.remove(tb.curr_channel_grp)
