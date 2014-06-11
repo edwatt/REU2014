@@ -112,6 +112,8 @@ class build_block(gr.top_block):
 						  help="specify the number of FFT bins [default=samp_rate/channel_bw]")
 		parser.add_option("", "--real-time", action="store_true", default=False,
 						  help="Attempt to enable real-time scheduling")
+		parser.add_option("-w","--tx-bandwidth", type="eng_float", default=6e6,
+						  metavar="Hz", help="transmit frequency bandwidth [default=%default]")
 
 		(options, args) = parser.parse_args()
 		if len(args) != 2:
@@ -119,6 +121,7 @@ class build_block(gr.top_block):
 			sys.exit(1)
 
 		self.channel_bandwidth = options.channel_bandwidth #fft channel bandwidth
+		self.tx_bandwidth = options.tx_bandwidth
 
 		self.min_freq = eng_notation.str_to_num(args[0])
 		self.max_freq = eng_notation.str_to_num(args[1])
@@ -251,9 +254,16 @@ class build_block(gr.top_block):
 		if self.next_freq >= self.max_center_freq:
 			self.next_freq = self.min_center_freq
 			# print "Step Count: %d" % self.step_count
-			# self.step_count = 0
+			# self.step_count = 0i
 			print "Channel Group scan complete. Starting scan again."
 			sys.stdout.flush()
+
+		freq_diff = abs(target_freq - self.tx_freq)
+
+		if freq_diff < ( self.tx_bandwidth / 2 + self.freq_step / 2 ):
+			self.tx_off()
+		else:
+			self.tx_on()
 
 		if not self.set_rx_freq(target_freq):
 			print "Failed to set frequency to", target_freq
@@ -284,7 +294,8 @@ class build_block(gr.top_block):
 	def set_tx_channel(self, channel):
 		self.curr_channel = channel
 		target_freq = self.spec_min_freq + (self.curr_channel + 0.5) * self.tx_channel_bw
-		# self.u_tx.set_center_freq(target_freq)	
+		self.tx_freq = target_freq 
+		self.u_tx.set_center_freq(target_freq)	
 		self.tx_freq_min = target_freq - self.tx_guard_band
 		self.tx_freq_max = target_freq + self.tx_guard_band
 		print "\n TX Freq: %f" % target_freq
@@ -311,7 +322,15 @@ class build_block(gr.top_block):
 
 	def nearest_freq(self, freq, channel_bandwidth):
 		freq = round(freq / channel_bandwidth, 0) * channel_bandwidth
-		return freq		
+		return freq	
+	def tx_on(self):
+		if self.tx_src0.amplitude() > 0.0:
+			self.tx_src0.set_amplitude(0.0)
+			print "TX OFF"
+	def tx_off(self):
+		if self.tx_src0.amplitude() < 1.0:
+			self.tx_src0.set_amplitude(1.0)
+			print "TX ON"
 
 def main_loop(tb):
 

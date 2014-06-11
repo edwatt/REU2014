@@ -97,6 +97,7 @@ def main():
 
 			print "Transmission will trasmit at a single frequency"
 			print "Frequency: %d" % tb.tx_freq
+			print "Transmission ON"
  
 			while(1):
 				raw_input("Press Enter to toggle transmission & Ctrl-C to exit\n")
