@@ -259,6 +259,7 @@ class build_block(gr.top_block):
 			sys.stdout.flush()
 
 		freq_diff = abs(target_freq - self.tx_freq)
+		print "Target Freq: %d MHz, Diff: %d MHz, TX BW: %f MHz, Freq Step: %f MHz, Min dist: %f MHz" % ((target_freq / 1e6), (freq_diff / 1e6),(self.tx_bandwidth / 1e6 ),(self.freq_step / 1e6), ( (self.tx_bandwidth / 2 + self.freq_step / 2)/1e6 ))
 
 		if freq_diff < ( self.tx_bandwidth / 2 + self.freq_step / 2 ):
 			self.tx_off()
@@ -318,19 +319,19 @@ class build_block(gr.top_block):
 
 	def set_gain(self, gain):
 		self.u_rx.set_gain(gain)
-		self.u_tx.set_gain(gain)
+		self.u_tx.set_gain(gain * 1.75)
 
 	def nearest_freq(self, freq, channel_bandwidth):
 		freq = round(freq / channel_bandwidth, 0) * channel_bandwidth
 		return freq	
 	def tx_on(self):
-		if self.tx_src0.amplitude() > 0.0:
-			self.tx_src0.set_amplitude(0.0)
-			print "TX OFF"
-	def tx_off(self):
 		if self.tx_src0.amplitude() < 1.0:
 			self.tx_src0.set_amplitude(1.0)
 			print "TX ON"
+	def tx_off(self):
+		if self.tx_src0.amplitude() > 0.0:
+			self.tx_src0.set_amplitude(0.0)
+			print "TX OFF"
 
 def main_loop(tb):
 

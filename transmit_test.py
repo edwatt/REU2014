@@ -96,7 +96,7 @@ def main():
 		if tb.u_tx is not None:
 
 			print "Transmission will trasmit at a single frequency"
-			print "Frequency: %d" % tb.tx_freq
+			print "Frequency: %d MHz" % (tb.tx_freq / 1e6)
 			print "Transmission ON"
  
 			while(1):
