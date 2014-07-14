@@ -36,6 +36,10 @@ import threading
 from datetime import datetime
 import matplotlib.pyplot as plt
 import math
+import csv
+import time
+from matplotlib.patches import Rectangle
+
 
 sys.stderr.write("Warning: this may have issues on some machines+Python version combinations to seg fault due to the callback in bin_statitics.\n\n")
 
@@ -133,6 +137,8 @@ class my_top_block(gr.top_block):
 						  help="Attempt to enable real-time scheduling")
 		parser.add_option("-c", "--num-channels", type="int", default=10,
 						  help="Set number of channels for signal analysis output vector [default=%default]")
+		parser.add_option("-d", "--display-graph", action="store_true", default=False,
+						  help="Display fft data in a graph after each cycle")
 
 		(options, args) = parser.parse_args()
 		if len(args) != 2:
@@ -147,6 +153,8 @@ class my_top_block(gr.top_block):
 		if self.min_freq > self.max_freq:
 			# swap them
 			self.min_freq, self.max_freq = self.max_freq, self.min_freq
+
+		self.display_graph = options.display_graph
 
 		if not options.real_time:
 			realtime = False
@@ -232,6 +240,7 @@ class my_top_block(gr.top_block):
 		self.x_freq = []
 		self.y_power = []
 		self.sample_count = 0
+		self.noise_floor_db = None
 
 		# channel bar graph
 		self.num_channels = options.num_channels
@@ -248,33 +257,78 @@ class my_top_block(gr.top_block):
 		if self.next_freq >= self.max_center_freq:
 			self.next_freq = self.min_center_freq
 			
-			#self.stop()
-			if self.squelch_threshold is not None:
-				print "Signal Vector"
+			# self.stop()
+ 			if self.squelch_threshold is not None:
+				# print "Signal Vector"
 				for i in xrange(0, self.num_channels):
-					print "%d MHz - %d MHz : %d" % (((self.min_freq + self.channel_width * i)/1e6), ((self.min_freq + self.channel_width * (i+1))/1e6), self.signal_vector[i])
-			
+					# print "%d MHz - %d MHz : %d" % (((self.min_freq + self.channel_width * i)/1e6), ((self.min_freq + self.channel_width * (i+1))/1e6), self.signal_vector[i])
+					# sys.stdout.write(str(self.signal_vector[i]))
+					pass
+				# print " "
+			else:
+				print "\rTo print a signal vector, specify a squelch threshold using the -q option"
+		
+			self.y_power[:] = [x - self.noise_floor_db for x in self.y_power]
 
-			fig = plt.figure()
-			plt.plot(self.x_freq, self.y_power, 'b-')
 
-			#ax2 = fig.add_subplot(1,2,2)
-			#ax2.bar(self.x_freq_bar, self.y_power_bar, int(self.channel_width))
-			plt.show(block=False)
+			combined_list = [self.x_freq,self.y_power]
+
+			data_array = [list(m) for m in zip(*combined_list)]
+			if self.squelch_threshold is not None: 
+				power_thres = self.squelch_threshold
+			else:
+				power_thres = 35
+			channel_bandwidth = 50e3
+			signal_min_bandwidth = 1e6
+
+			signal_id_array = self.signal_detection(data_array,power_thres,channel_bandwidth, signal_min_bandwidth)
+
+			timestr = time.strftime("%Y%m%d-%H%M%S")
+			filename_str = 'fft_samples/fft_' + timestr  + '.csv'
+
+			with open(filename_str, 'wb') as f:
+				writer = csv.writer(f)
+				writer.writerows(combined_list)
+	
+			if self.display_graph:
+				fig = plt.figure()
+				plt.plot(self.x_freq, self.y_power, 'b-')
+				
+				for signal in signal_id_array:
+					x1 = signal[0]/1e6
+					width = (signal[1] - signal[0]) / 1e6
+					y1 = 0
+					height = 100
+					currentAxis = plt.gca()
+					currentAxis.add_patch(Rectangle((x1,y1), width, height, facecolor="green", alpha=0.5))
+
+
+				#ax2 = fig.add_subplot(1,2,2)
+				#ax2.bar(self.x_freq_bar, self.y_power_bar, int(self.channel_width))
+				plt.show(block=False)
+	
+
+
+			else:
+				# print "\rTo display the graph of the fft, use the -d option"
+				pass
+
 			
 			#reset lists
 			self.x_freq = []
 			self.y_power = []
 			self.sample_count = 0
+			self.noise_floor_db = None
 
+			self.signal_vector = [0] * self.num_channels
 			self.y_power_bar = [0] * self.num_channels
 
 		if not self.set_freq(target_freq):
 			print "Failed to set frequency to", target_freq
 			sys.exit(1)
 
-		sys.stdout.write("\rFrequency: %f MHz" % (target_freq / 1e6))
-		sys.stdout.flush()
+		#sys.stdout.write("\rFrequency: %f MHz" % (target_freq / 1e6))
+		#sys.stdout.flush()
 
 		return target_freq
 
@@ -300,6 +354,46 @@ class my_top_block(gr.top_block):
 	def nearest_freq(self, freq, channel_bandwidth):
 		freq = round(freq / channel_bandwidth, 0) * channel_bandwidth
 		return freq
+
+	def signal_detection(self, data_array,power_thres,channel_bandwidth, signal_min_bandwidth):
+
+		spectrum_min = self.min_freq
+		spectrum_max = self.max_freq
+		freq_array = range(int(spectrum_min + channel_bandwidth*0.5), int(spectrum_max), int(channel_bandwidth))
+		power_thres_array = [0] * len(freq_array)
+
+		print len(power_thres_array)
+		
+		#loop through frequency results and threshold into channel array
+		for sample in data_array:
+			#print sample
+			if sample[1] > power_thres:
+				index = int(math.floor((sample[0]*1e6 - spectrum_min)/channel_bandwidth))
+				#print index
+				power_thres_array[index] = 1
+
+		length = 0
+		#print "Power thresholding done"
+		length_thres = int(math.ceil(signal_min_bandwidth/channel_bandwidth))
+
+		signal_id_array = [] #[signal start, signal end]
+
+		for i in range(len(power_thres_array)):
+			if power_thres_array[i] == 1:
+				length += 1
+			else:
+				if length < length_thres:
+					power_thres_array[i-length:i] = [0]*length
+				else:
+					signal_params = [freq_array[i-length],freq_array[i-1]]
+					signal_id_array.append(signal_params)
+				length = 0
+
+		for signal in signal_id_array:
+			print "Signal start: %f, signal end: %f, signal width: %f" % (signal[0],signal[1],signal[1]-signal[0])
+		
+		return signal_id_array
+		
 
 def main_loop(tb):
 	
@@ -331,7 +425,10 @@ def main_loop(tb):
 			freq = bin_freq(i_bin, center_freq)
 			#noise_floor_db = -174 + 10*math.log10(tb.channel_bandwidth)
 			noise_floor_db = 10*math.log10(min(m.data)/tb.usrp_rate)
-			power_db = 10*math.log10(m.data[i_bin]/tb.usrp_rate) - noise_floor_db
+			power_db = 10*math.log10(m.data[i_bin]/tb.usrp_rate) #- noise_floor_db
+
+			if tb.noise_floor_db is None or noise_floor_db < tb.noise_floor_db:
+				tb.noise_floor_db = noise_floor_db
 
 			tb.x_freq.append(freq/1e6)
 			tb.y_power.append(power_db)

@@ -52,3 +52,8 @@ coverage.xml
 # Sphinx documentation
 docs/_build/
 
+#fft_sample_outputs
+fft_samples/
+
+#octave
+octave-workspace
