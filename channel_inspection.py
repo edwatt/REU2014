@@ -135,10 +135,14 @@ class my_top_block(gr.top_block):
 						  help="specify number of FFT bins [default=samp_rate/channel_bw]")
 		parser.add_option("", "--real-time", action="store_true", default=False,
 						  help="Attempt to enable real-time scheduling")
-		parser.add_option("-c", "--num-channels", type="int", default=10,
+		parser.add_option("-v", "--vector_bw", type="eng_float", default=1e6, metavar="Hz",
 						  help="Set number of channels for signal analysis output vector [default=%default]")
 		parser.add_option("-d", "--display-graph", action="store_true", default=False,
 						  help="Display fft data in a graph after each cycle")
+		parser.add_option("-w", "--wb-threshold", type="eng_float",
+						  default=None, metavar="dB",
+						  help="wideband threshold in dB [default=%default]")
+
 
 		(options, args) = parser.parse_args()
 		if len(args) != 2:
@@ -190,7 +194,8 @@ class my_top_block(gr.top_block):
 			self.fft_size = options.fft_size
 		
 		self.squelch_threshold = options.squelch_threshold
-		
+		self.wb_threshold = options.wb_threshold
+	
 		s2v = blocks.stream_to_vector(gr.sizeof_gr_complex, self.fft_size)
 
 		mywindow = filter.window.blackmanharris(self.fft_size)
@@ -242,11 +247,9 @@ class my_top_block(gr.top_block):
 		self.sample_count = 0
 		self.noise_floor_db = None
 
-		# channel bar graph
-		self.num_channels = options.num_channels
-		self.channel_width = (self.max_freq - self.min_freq) / self.num_channels
-		self.x_freq_bar = range(int(self.min_freq), int(self.max_freq), int(self.channel_width))
-		self.y_power_bar = [0] * self.num_channels
+		# signal vector
+		self.channel_width = options.vector_bw
+		self.num_channels = int((self.max_freq - self.min_freq) / self.channel_width)
 
 		self.signal_vector = [0] * self.num_channels
 
@@ -257,31 +260,30 @@ class my_top_block(gr.top_block):
 		if self.next_freq >= self.max_center_freq:
 			self.next_freq = self.min_center_freq
 			
-			# self.stop()
- 			if self.squelch_threshold is not None:
-				# print "Signal Vector"
-				for i in xrange(0, self.num_channels):
-					# print "%d MHz - %d MHz : %d" % (((self.min_freq + self.channel_width * i)/1e6), ((self.min_freq + self.channel_width * (i+1))/1e6), self.signal_vector[i])
-					# sys.stdout.write(str(self.signal_vector[i]))
-					pass
-				# print " "
-			else:
-				print "\rTo print a signal vector, specify a squelch threshold using the -q option"
 		
 			self.y_power[:] = [x - self.noise_floor_db for x in self.y_power]
 
 
 			combined_list = [self.x_freq,self.y_power]
 
+
 			data_array = [list(m) for m in zip(*combined_list)]
-			if self.squelch_threshold is not None: 
-				power_thres = self.squelch_threshold
+
+			for item in data_array:	
+				if (item[1] > self.squelch_threshold) and (item[0]*1e6 >= self.min_freq) and (item[0]*1e6 <= self.max_freq):
+					#print datetime.now(), "center_freq", center_freq, "freq", freq, "power_db", power_db, "noise_floor_db", noise_floor_db
+					channel_index = min(self.num_channels-1,max(0,int(math.floor((item[0]*1e6 - self.min_freq) / self.channel_width))))
+					self.signal_vector[channel_index] = 1
+
+			if self.wb_threshold is not None: 
+				power_thres = self.wb_threshold
 			else:
 				power_thres = 35
 			channel_bandwidth = 50e3
 			signal_min_bandwidth = 1e6
 
 			signal_id_array = self.signal_detection(data_array,power_thres,channel_bandwidth, signal_min_bandwidth)
+			
 
 			timestr = time.strftime("%Y%m%d-%H%M%S")
 			filename_str = 'fft_samples/fft_' + timestr  + '.csv'
@@ -312,8 +314,25 @@ class my_top_block(gr.top_block):
 			else:
 				# print "\rTo display the graph of the fft, use the -d option"
 				pass
+		
+			# add wideband signals to the vector
+			for signal in signal_id_array:
+				start_channel = min(self.num_channels-1,max(0,int(math.floor((signal[0] - self.min_freq) / self.channel_width))))
+				end_channel = min(self.num_channels-1,max(0,int(math.floor((signal[1] - self.min_freq) / self.channel_width))))
 
-			
+				for i in xrange(start_channel, end_channel + 1, 1):
+					self.signal_vector[i] = 1		
+
+ 			# print out signal vector
+			if self.squelch_threshold is not None:
+				for i in xrange(0, self.num_channels):
+					sys.stdout.write(str(self.signal_vector[i]))
+				print " "
+			else:
+				print "\rTo print a signal vector, specify a squelch threshold using the -q option"
+
+
+	
 			#reset lists
 			self.x_freq = []
 			self.y_power = []
@@ -362,35 +381,46 @@ class my_top_block(gr.top_block):
 		freq_array = range(int(spectrum_min + channel_bandwidth*0.5), int(spectrum_max), int(channel_bandwidth))
 		power_thres_array = [0] * len(freq_array)
 
-		print len(power_thres_array)
+		# print len(power_thres_array)
 		
 		#loop through frequency results and threshold into channel array
-		for sample in data_array:
-			#print sample
-			if sample[1] > power_thres:
-				index = int(math.floor((sample[0]*1e6 - spectrum_min)/channel_bandwidth))
-				#print index
-				power_thres_array[index] = 1
+
+		try:
+			for sample in data_array:
+				#print sample
+				if sample[1] > power_thres:
+					index = min(len(freq_array)-1,max(0,int(math.floor((sample[0]*1e6 - spectrum_min)/channel_bandwidth))))
+					#print index
+					power_thres_array[index] = 1
+
+		except Exception:
+			print "Intial threshold index out of range"
+			print "Index: %d, spectrum_min: %f, channel_bandwidth: %f" % (index,spectrum_min,channel_bandwidth)
 
 		length = 0
 		#print "Power thresholding done"
 		length_thres = int(math.ceil(signal_min_bandwidth/channel_bandwidth))
 
 		signal_id_array = [] #[signal start, signal end]
+		
+		try:
 
-		for i in range(len(power_thres_array)):
-			if power_thres_array[i] == 1:
-				length += 1
-			else:
-				if length < length_thres:
-					power_thres_array[i-length:i] = [0]*length
+			for i in range(len(power_thres_array)):
+				if power_thres_array[i] == 1:
+					length += 1
 				else:
-					signal_params = [freq_array[i-length],freq_array[i-1]]
-					signal_id_array.append(signal_params)
-				length = 0
+					if length < length_thres:
+						power_thres_array[i-length:i] = [0]*length
+					else:
+						signal_params = [freq_array[i-length],freq_array[i-1]]
+						signal_id_array.append(signal_params)
+					length = 0
+		
+		except Exception:
+			print "Length thresholding index out of range"
 
-		for signal in signal_id_array:
-			print "Signal start: %f, signal end: %f, signal width: %f" % (signal[0],signal[1],signal[1]-signal[0])
+		#for signal in signal_id_array:
+		#	print "Signal start: %f, signal end: %f, signal width: %f" % (signal[0],signal[1],signal[1]-signal[0])
 		
 		return signal_id_array
 		
@@ -425,7 +455,7 @@ def main_loop(tb):
 			freq = bin_freq(i_bin, center_freq)
 			#noise_floor_db = -174 + 10*math.log10(tb.channel_bandwidth)
 			noise_floor_db = 10*math.log10(min(m.data)/tb.usrp_rate)
-			power_db = 10*math.log10(m.data[i_bin]/tb.usrp_rate) #- noise_floor_db
+			power_db = 10*math.log10(m.data[i_bin]/tb.usrp_rate)# - noise_floor_db
 
 			if tb.noise_floor_db is None or noise_floor_db < tb.noise_floor_db:
 				tb.noise_floor_db = noise_floor_db
@@ -436,10 +466,6 @@ def main_loop(tb):
 			#power_bar_index = int(math.floor((freq - tb.min_freq) / tb.channel_width))
 			#tb.y_power_bar[power_bar_index] += power_db
 
-			if (power_db > tb.squelch_threshold) and (freq >= tb.min_freq) and (freq <= tb.max_freq):
-				#print datetime.now(), "center_freq", center_freq, "freq", freq, "power_db", power_db, "noise_floor_db", noise_floor_db
-				channel_index = min(tb.num_channels-1,max(0,int(math.floor((freq - tb.min_freq) / tb.channel_width))))
-				tb.signal_vector[channel_index] = 1
 
 if __name__ == '__main__':
 	t = ThreadClass()
